@@ -60,7 +60,7 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
         _logger = logger;
     }
 
-    public async Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+    public async Task<T?> GetAsync<T>(Guid athleteId, string key, CancellationToken cancellationToken = default)
         where T : class
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(key);
@@ -69,7 +69,7 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
         try
         {
             var database = _redis.GetDatabase();
-            var physicalKey = await ResolveKeyAsync(database, key).ConfigureAwait(false);
+            var physicalKey = await ResolveKeyAsync(database, athleteId, key).ConfigureAwait(false);
             return await ReadAsync<T>(database, physicalKey).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsRedisUnavailable(ex))
@@ -80,6 +80,7 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
     }
 
     public async Task SetAsync<T>(
+        Guid athleteId,
         string key,
         T value,
         TimeSpan ttl,
@@ -93,7 +94,7 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
         try
         {
             var database = _redis.GetDatabase();
-            var physicalKey = await ResolveKeyAsync(database, key).ConfigureAwait(false);
+            var physicalKey = await ResolveKeyAsync(database, athleteId, key).ConfigureAwait(false);
             await WriteAsync(database, physicalKey, value, ttl).ConfigureAwait(false);
         }
         catch (Exception ex) when (IsRedisUnavailable(ex))
@@ -103,6 +104,7 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
     }
 
     public async Task<T> GetOrCreateAsync<T>(
+        Guid athleteId,
         string key,
         TimeSpan ttl,
         Func<CancellationToken, Task<T>> factory,
@@ -119,7 +121,7 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
         try
         {
             database = _redis.GetDatabase();
-            physicalKey = await ResolveKeyAsync(database, key).ConfigureAwait(false);
+            physicalKey = await ResolveKeyAsync(database, athleteId, key).ConfigureAwait(false);
 
             var hit = await ReadAsync<T>(database, physicalKey).ConfigureAwait(false);
             if (hit is not null)
@@ -315,17 +317,10 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
         }
     }
 
-    private static async Task<string> ResolveKeyAsync(IDatabase database, string logicalKey)
+    private static async Task<string> ResolveKeyAsync(IDatabase database, Guid athleteId, string logicalKey)
     {
-        if (!TryExtractAthleteId(logicalKey, out var athleteId, out var suffix))
-        {
-            // Keys that name no athlete sit outside the versioning scheme and are
-            // invalidated by their TTL alone.
-            return $"{KeyPrefix}:shared:{logicalKey}";
-        }
-
         var version = await ReadVersionAsync(database, athleteId).ConfigureAwait(false);
-        return $"{KeyPrefix}:v{version.ToString(CultureInfo.InvariantCulture)}:athlete:{athleteId:D}:{suffix}";
+        return $"{KeyPrefix}:v{version.ToString(CultureInfo.InvariantCulture)}:athlete:{athleteId:D}:{logicalKey}";
     }
 
     private static async Task<long> ReadVersionAsync(IDatabase database, Guid athleteId)
@@ -337,32 +332,6 @@ public sealed class RedisAnalyticsCache : IAnalyticsCache
     private static string VersionKey(Guid athleteId) =>
         $"{KeyPrefix}:keyver:{athleteId:D}";
 
-    /// <summary>
-    /// The port hands <see cref="GetAsync{T}"/> and friends a bare key, so the
-    /// athlete a key belongs to has to come from the key itself: callers prefix
-    /// analytics keys with the athlete id, as in
-    /// <c>"3f2a...-...:trends:2024-W12"</c>.
-    /// </summary>
-    private static bool TryExtractAthleteId(
-        string logicalKey,
-        out Guid athleteId,
-        [NotNullWhen(true)] out string? suffix)
-    {
-        var separator = logicalKey.IndexOf(':');
-        if (separator > 0 && Guid.TryParse(logicalKey.AsSpan(0, separator), out athleteId))
-        {
-            var tail = logicalKey[(separator + 1)..];
-            if (tail.Length > 0)
-            {
-                suffix = tail;
-                return true;
-            }
-        }
-
-        athleteId = Guid.Empty;
-        suffix = null;
-        return false;
-    }
 
     private static bool IsRedisUnavailable(Exception ex) =>
         ex is RedisConnectionException or RedisTimeoutException;

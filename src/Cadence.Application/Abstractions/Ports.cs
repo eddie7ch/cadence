@@ -125,15 +125,27 @@ public interface ICoachingReportRepository
 
 /// <summary>
 /// Read-through cache for analytics that are expensive to derive and cheap to
-/// invalidate. Keys are namespaced per athlete so a single athlete's data can be
-/// evicted without flushing everyone.
+/// invalidate.
 /// </summary>
+/// <remarks>
+/// The athlete is a parameter rather than a prefix the caller bakes into
+/// <c>key</c>. It used to be a naming convention, and a caller that formatted the
+/// prefix differently from what the implementation parsed produced entries that
+/// looked cached, read back correctly, and were never invalidated - a bug with no
+/// symptom except stale numbers. Making it an argument moves that from a
+/// convention nobody checks to something the compiler enforces.
+/// </remarks>
 public interface IAnalyticsCache
 {
-    Task<T?> GetAsync<T>(string key, CancellationToken cancellationToken = default)
+    Task<T?> GetAsync<T>(Guid athleteId, string key, CancellationToken cancellationToken = default)
         where T : class;
 
-    Task SetAsync<T>(string key, T value, TimeSpan ttl, CancellationToken cancellationToken = default)
+    Task SetAsync<T>(
+        Guid athleteId,
+        string key,
+        T value,
+        TimeSpan ttl,
+        CancellationToken cancellationToken = default)
         where T : class;
 
     /// <summary>
@@ -141,6 +153,7 @@ public interface IAnalyticsCache
     /// concurrent requests runs the expensive query once rather than fifty times.
     /// </summary>
     Task<T> GetOrCreateAsync<T>(
+        Guid athleteId,
         string key,
         TimeSpan ttl,
         Func<CancellationToken, Task<T>> factory,

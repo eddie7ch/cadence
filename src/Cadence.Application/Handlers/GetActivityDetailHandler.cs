@@ -74,9 +74,10 @@ public sealed class GetActivityDetailHandler
 
         string key = string.Create(
             CultureInfo.InvariantCulture,
-            $"athlete:{activity.AthleteId}:activity:{activity.Id}:heart-rate-zones");
+            $"activity:{activity.Id}:heart-rate-zones");
 
         return await _cache.GetOrCreateAsync(
+            activity.AthleteId,
             key,
             ZoneCacheTtl,
             token => ComputeZoneSecondsAsync(activity, token),
@@ -107,13 +108,13 @@ public sealed class GetActivityDetailHandler
                     sample.TemperatureCelsius)),
         ];
 
-        int? configuredMaximum = athlete?.MaxHeartRate;
-
-        // Without a configured maximum the highest rate actually recorded is the
-        // only reference available; zones derived that way are indicative only.
-        int? maximum = configuredMaximum is > 0
-            ? configuredMaximum
-            : points.Max(point => point.HeartRateBpm);
+        // Zones require a maximum the athlete has actually measured. Falling back
+        // to the highest rate in this activity would be circular: the boundaries
+        // would be derived from the same session being classified, so every hard
+        // effort would report itself as maximal and every easy one as easy. An
+        // empty distribution is the honest answer, and the client prompts for the
+        // value instead of drawing a chart that means nothing.
+        int? maximum = athlete?.MaxHeartRate;
 
         if (maximum is not > 0)
         {

@@ -26,6 +26,7 @@ public static class DependencyInjection
         services.AddScoped<GenerateCoachingReportHandler>();
         services.AddScoped<GetLatestCoachingReportHandler>();
         services.AddScoped<GetAthleteHandler>();
+        services.AddScoped<UpdateAthleteProfileHandler>();
         services.AddScoped<DeleteActivityHandler>();
 
         return services;

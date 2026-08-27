@@ -73,7 +73,7 @@ public static class ActivityAnalyzer
         Pace gradeAdjusted = GradeAdjustedPace.OverSegments(
             segments.Where(s => s.IsMoving).Select(s => (s.DistanceMeters, s.RiseMeters, s.Seconds)));
 
-        HeartRateZones? zones = ResolveZones(cleaned, options);
+        HeartRateZones? zones = ResolveZones(options);
 
         return new ActivityMetrics
         {
@@ -175,17 +175,17 @@ public static class ActivityAnalyzer
         return GeoMath.HaversineDistance(from.Latitude, from.Longitude, to.Latitude, to.Longitude);
     }
 
-    private static HeartRateZones? ResolveZones(IReadOnlyList<TrackPoint> points, AnalysisOptions options)
+    private static HeartRateZones? ResolveZones(AnalysisOptions options)
     {
         if (options.MaxHeartRate is > 0)
         {
             return HeartRateZones.ForAthlete(options.MaxHeartRate.Value, options.RestingHeartRate);
         }
 
-        // No configured maximum: fall back to the highest rate actually observed.
-        // Zones derived this way are indicative only, which the API makes clear.
-        int? observed = points.Max(p => p.HeartRateBpm);
-        return observed is > 0 ? HeartRateZones.ForAthlete(observed.Value, options.RestingHeartRate) : null;
+        // No configured maximum, no zones. Deriving boundaries from the highest
+        // rate in this same track is circular - it guarantees the track looks
+        // maximal - so the analyser reports nothing rather than something wrong.
+        return null;
     }
 
     private static int? TimeWeightedAverage(

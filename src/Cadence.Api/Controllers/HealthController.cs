@@ -117,9 +117,12 @@ public sealed class HealthController(ILogger<HealthController> logger) : Control
             // No multiplexer to ask directly, so prove the cache round-trips instead
             // of inferring health from a read alone - a cache that silently drops
             // writes reads exactly like an empty healthy one.
-            var probe = Guid.CreateVersion7().ToString("n");
-            await cache.SetAsync("health:ready", probe, TimeSpan.FromSeconds(30), cancellationToken);
-            var echoed = await cache.GetAsync<string>("health:ready", cancellationToken);
+            // A throwaway athlete id: the probe writes into its own namespace so a
+            // readiness check can never collide with, or invalidate, real analytics.
+            var probeAthlete = Guid.CreateVersion7();
+            var probe = probeAthlete.ToString("n");
+            await cache.SetAsync(probeAthlete, "health:ready", probe, TimeSpan.FromSeconds(30), cancellationToken);
+            var echoed = await cache.GetAsync<string>(probeAthlete, "health:ready", cancellationToken);
 
             return string.Equals(echoed, probe, StringComparison.Ordinal)
                 ? new DependencyStatusDto("redis", Healthy, "round-trip ok")

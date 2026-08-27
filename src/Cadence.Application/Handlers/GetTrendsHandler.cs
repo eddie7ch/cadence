@@ -50,9 +50,10 @@ public sealed class GetTrendsHandler
         // "now" would otherwise mint a new cache entry on every request.
         string key = string.Create(
             CultureInfo.InvariantCulture,
-            $"athlete:{athleteId}:trends:{start.UtcDateTime:yyyyMMdd}:{end.UtcDateTime:yyyyMMdd}");
+            $"trends:{start.UtcDateTime:yyyyMMdd}:{end.UtcDateTime:yyyyMMdd}");
 
         return await _cache.GetOrCreateAsync(
+            athleteId,
             key,
             CacheTtl,
             token => BuildAsync(athleteId, start, end, token),

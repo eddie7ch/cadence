@@ -186,11 +186,27 @@ namespace Cadence.Infrastructure.Persistence.Migrations
                 table: "CoachingReports",
                 columns: new[] { "AthleteId", "GeneratedAt" },
                 descending: new[] { false, true });
+
+            // EF cannot model an index on an expression, and FindNearAsync emits
+            // ST_DWithin(route::geography, ...) so that the radius is metres on the
+            // spheroid rather than degrees. A GiST index on the bare geometry column
+            // cannot serve a predicate on the casted expression: the planner falls
+            // back to a sequential scan, which is correct and linear, and nothing
+            // looks wrong until the table is big. This index matches the expression
+            // the query actually uses.
+            migrationBuilder.Sql(
+                """
+                CREATE INDEX "IX_Activities_Route_Geography"
+                ON "Activities"
+                USING GIST (CAST("Route" AS geography));
+                """);
         }
 
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.Sql("""DROP INDEX IF EXISTS "IX_Activities_Route_Geography";""");
+
             migrationBuilder.DropTable(
                 name: "ActivitySamples");
 

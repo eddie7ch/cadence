@@ -16,7 +16,7 @@ A recorded walkthrough belongs at `docs/demo.gif`; `docs/RECORDING-THE-DEMO.md` 
 
 ```mermaid
 flowchart LR
-    browser["Browser<br/>React, MapLibre, Recharts"]
+    browser["Browser<br/>React, Leaflet, Recharts"]
 
     subgraph container["Cadence.Api container"]
         http["HTTP layer<br/>controllers, JWT, ProblemDetails"]
@@ -87,7 +87,7 @@ LIMIT  @limit;
 Routes are stored as `geometry(LineString, 4326)`. Two details make this work rather than merely run:
 
 - **The `::geography` cast.** `ST_DWithin` on raw `geometry` in SRID 4326 measures in *degrees*. A radius of `0.005` is about 555 m at the equator and about 350 m at Calgary's latitude - a search whose meaning changes as you travel. Casting to `geography` makes the radius metres on the spheroid.
-- **The index is on the same expression as the query**: `CREATE INDEX ix_activities_route_geog ON activities USING GIST ((route::geography))`. A GiST index on the bare `geometry` column cannot serve a predicate on the casted expression. The planner silently falls back to a sequential scan, the query still returns correct rows, and nothing looks wrong until the table is large enough for it to matter.
+- **The index is on the same expression as the query**: `CREATE INDEX "IX_Activities_Route_Geography" ON "Activities" USING GIST (CAST("Route" AS geography))`. A GiST index on the bare `geometry` column cannot serve a predicate on the casted expression. The planner silently falls back to a sequential scan, the query still returns correct rows, and nothing looks wrong until the table is large enough for it to matter.
 
 With the expression index in place, `ST_DWithin` decomposes into an index-backed bounding-box overlap followed by an exact distance recheck on the survivors, so almost nothing reaches the spheroid arithmetic. The C# alternative - load every route the athlete owns and measure in application code - is `O(all activities)` per query and moves megabytes of geometry across the wire to discard nearly all of it.
 
@@ -153,6 +153,16 @@ The obvious alternative is `SCAN MATCH cadence:athlete:{id}:*` followed by `DEL`
 The cost is honest and bounded: the superseded entries occupy memory until their TTL expires. That is a known amount of garbage traded for constant-time, atomic invalidation.
 
 The cache port also exposes `GetOrCreateAsync`, which computes under a per-key lock. A cold key hit by fifty concurrent requests runs the expensive query once instead of fifty times - the stampede that makes a cache miss more expensive than having no cache at all.
+
+One detail is there because getting it wrong cost an afternoon. The athlete is an
+explicit `Guid` parameter on every cache method, not a prefix the caller formats
+into the key string. It began as a naming convention - callers were to write
+`"{athleteId}:trends:..."` and the cache would parse the id back out - and a
+caller that formatted it as `"athlete:{id}:trends:..."` instead fell through to an
+unversioned namespace. Every read and write still worked. Every value still came
+back. Nothing was ever invalidated, and the only symptom was numbers that were
+quietly out of date. Making the athlete an argument turns a convention nobody
+checks into something the compiler will not let you get wrong.
 
 ### Douglas-Peucker for map payloads
 
@@ -330,6 +340,7 @@ Writes into `samples/`. Every noise source is seeded, so the output is byte-iden
 
 Written down rather than discovered.
 
+- **Heart-rate zones need a measured maximum.** `PATCH /api/v1/auth/me` sets it; until then the API returns an empty distribution rather than guessing. Deriving the boundaries from the highest rate in the activity being classified is circular - it makes every session look maximal - so it is deliberately not done.
 - **Tokens cannot be revoked.** A JWT is valid until it expires (12 hours by default). There is no refresh token, no rotation, and no deny list.
 - **No rate limiting on `/auth/login`.** Passwords are BCrypt-hashed with the default work factor, which is a real cost per guess, but nothing here is hardened against credential stuffing.
 - **A crash mid-import strands the activity.** The queue is an in-process channel and there is no start-up sweep that re-enqueues rows left in `Pending` or `Processing`. The uploaded file is still on the volume and the row is still in the database, but nothing retries it, and the per-athlete checksum means re-uploading the same file is rejected as a duplicate rather than treated as a retry. Recovery today is: delete the stranded activity, upload again.
@@ -352,7 +363,7 @@ Written down rather than discovered.
 | API | ASP.NET Core controllers, JWT bearer, Swashbuckle, FluentValidation |
 | Persistence | EF Core 10, Npgsql, PostgreSQL 17 with PostGIS 3.5, NetTopologySuite |
 | Cache | Redis 7, StackExchange.Redis |
-| Frontend | React, TypeScript, Vite, MapLibre GL, Recharts |
+| Frontend | React, TypeScript, Vite, Leaflet, Recharts |
 | AI | Anthropic API, structured output, optional |
 | Tests | xUnit, Shouldly, `WebApplicationFactory` |
 | Delivery | Docker multi-stage build, non-root runtime, Docker Compose, GitHub Actions |

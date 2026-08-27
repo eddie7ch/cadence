@@ -14,6 +14,7 @@ public sealed class AuthController(
     RegisterAthleteHandler registerAthleteHandler,
     AuthenticateAthleteHandler authenticateAthleteHandler,
     GetAthleteHandler getAthleteHandler,
+    UpdateAthleteProfileHandler updateAthleteProfile,
     ICurrentAthlete currentAthlete) : ControllerBase
 {
     [HttpPost("register")]
@@ -62,6 +63,31 @@ public sealed class AuthController(
     public async Task<ActionResult<AthleteDto>> Me(CancellationToken cancellationToken)
     {
         var result = await getAthleteHandler.ExecuteAsync(currentAthlete.Id, cancellationToken);
+        return result.ToActionResult(this);
+    }
+
+    /// <summary>
+    /// Sets the reference values the analytics need. Heart-rate zones stay empty
+    /// until a measured maximum is supplied.
+    /// </summary>
+    [HttpPatch("me")]
+    [Authorize]
+    [ProducesResponseType<AthleteDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ProblemDetails>(StatusCodes.Status400BadRequest)]
+    public async Task<ActionResult<AthleteDto>> UpdateProfile(
+        UpdateProfileRequest request,
+        CancellationToken cancellationToken)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var result = await updateAthleteProfile.ExecuteAsync(
+            currentAthlete.Id,
+            request.MaxHeartRate,
+            request.RestingHeartRate,
+            request.BirthYear,
+            request.WeightKilograms,
+            cancellationToken);
+
         return result.ToActionResult(this);
     }
 }

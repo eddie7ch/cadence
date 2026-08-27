@@ -232,7 +232,7 @@ internal static class SampleRoutes
                 new(51.0824, -115.3870, 1428),
                 new(51.0787, -115.3860, 1420),
             ],
-            StartedAt = new DateTimeOffset(2026, 5, 17, 13, 42, 0, TimeSpan.Zero),
+            StartedAt = SampleDates.DaysAgo(10, 13, 42),
             BaseSpeedMetersPerSecond = 3.15,
             MaxHeartRate = 188,
             RestingHeartRate = 46,
@@ -254,7 +254,7 @@ internal static class SampleRoutes
                 new(51.0552, -114.0521, 1041),
                 new(51.0561, -114.0454, 1040),
             ]),
-            StartedAt = new DateTimeOffset(2026, 5, 19, 12, 5, 0, TimeSpan.Zero),
+            StartedAt = SampleDates.DaysAgo(8, 12, 5),
             BaseSpeedMetersPerSecond = 3.35,
             MaxHeartRate = 188,
             RestingHeartRate = 46,
@@ -288,7 +288,7 @@ internal static class SampleRoutes
                 new(51.1032, -114.1063, 1177),
                 new(51.1042, -114.1128, 1163),
             ],
-            StartedAt = new DateTimeOffset(2026, 5, 21, 17, 20, 0, TimeSpan.Zero),
+            StartedAt = SampleDates.DaysAgo(6, 17, 20),
             BaseSpeedMetersPerSecond = 3.85,
             MaxHeartRate = 188,
             RestingHeartRate = 46,
@@ -990,5 +990,21 @@ internal static class FitCrc
         crc = (ushort)(crc ^ temp ^ Table[(value >> 4) & 0xF]);
 
         return crc;
+    }
+}
+
+/// <summary>
+/// Sample activities are dated relative to today rather than pinned to fixed
+/// calendar dates. A fixture stamped with the day it was written slides out of
+/// every default reporting window as soon as a few months pass, and the demo
+/// then opens on an empty dashboard for no reason a reader could guess.
+/// The tracks themselves stay deterministic; only the anchor moves.
+/// </summary>
+internal static class SampleDates
+{
+    public static DateTimeOffset DaysAgo(int days, int hour, int minute)
+    {
+        DateTime day = DateTime.UtcNow.Date.AddDays(-days);
+        return new DateTimeOffset(day.Year, day.Month, day.Day, hour, minute, 0, TimeSpan.Zero);
     }
 }

@@ -126,29 +126,36 @@ internal sealed class ActivityRepository : IActivityRepository
         DateTimeOffset to,
         CancellationToken cancellationToken = default)
     {
-        // Grouped and aggregated by PostgreSQL: one row per week comes back over the wire
-        // rather than every activity in the window.
-        var rows = await _context.Activities
-            .AsNoTracking()
-            .Where(a => a.AthleteId == athleteId
-                && a.Status == ActivityStatus.Ready
-                && a.StartedAt >= from
-                && a.StartedAt <= to)
-            .GroupBy(a => CadenceDbContext.DateTrunc("week", a.StartedAt))
-            .Select(g => new WeeklyRow(
-                g.Key,
-                g.Count(),
-                g.Sum(a => a.DistanceMeters),
-                g.Sum(a => a.ElevationGainMeters),
-                g.Sum(a => a.MovingTime.TotalSeconds),
-                g.Average(a => (double?)a.AverageHeartRateBpm)))
-            .OrderBy(row => row.WeekStart)
+        // Raw SQL rather than LINQ, deliberately. The aggregate needs
+        // date_trunc as a grouping key alongside SUM(EXTRACT(EPOCH FROM interval))
+        // over the moving-time column, and EF cannot translate that combination -
+        // it fails at runtime with a client-evaluation error rather than at build.
+        // Falling back to grouping in memory would pull every activity in the
+        // window across the wire to produce a dozen rows, which is precisely what
+        // this method exists to avoid. The query is fully parameterised.
+        var rows = await _context.Database
+            .SqlQuery<WeeklyRow>(
+                $"""
+                 SELECT (date_trunc('week', a."StartedAt" AT TIME ZONE 'UTC'))::date AS "WeekStart",
+                        COUNT(*)::int                                                AS "ActivityCount",
+                        COALESCE(SUM(a."DistanceMeters"), 0)                         AS "DistanceMeters",
+                        COALESCE(SUM(a."ElevationGainMeters"), 0)                    AS "ElevationGainMeters",
+                        COALESCE(SUM(EXTRACT(EPOCH FROM a."MovingTime")), 0)::double precision AS "MovingSeconds",
+                        AVG(a."AverageHeartRateBpm")::double precision               AS "AverageHeartRateBpm"
+                 FROM "Activities" a
+                 WHERE a."AthleteId" = {athleteId}
+                   AND a."Status" = 'Ready'
+                   AND a."StartedAt" >= {from}
+                   AND a."StartedAt" <= {to}
+                 GROUP BY 1
+                 ORDER BY 1
+                 """)
             .ToListAsync(cancellationToken)
             .ConfigureAwait(false);
 
         return rows
             .Select(row => new WeeklyTotals(
-                DateOnly.FromDateTime(row.WeekStart),
+                row.WeekStart,
                 row.ActivityCount,
                 row.DistanceMeters,
                 row.ElevationGainMeters,
@@ -170,7 +177,7 @@ internal sealed class ActivityRepository : IActivityRepository
     }
 
     private sealed record WeeklyRow(
-        DateTime WeekStart,
+        DateOnly WeekStart,
         int ActivityCount,
         double DistanceMeters,
         double ElevationGainMeters,

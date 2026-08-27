@@ -68,9 +68,10 @@ public sealed class FindNearbyActivitiesHandler
         // instead of missing the cache on every frame.
         string key = string.Create(
             CultureInfo.InvariantCulture,
-            $"athlete:{athleteId}:nearby:{latitude:F5}:{longitude:F5}:{radiusMeters:F0}:{cappedLimit}");
+            $"nearby:{latitude:F5}:{longitude:F5}:{radiusMeters:F0}:{cappedLimit}");
 
         List<NearbyActivityDto> nearby = await _cache.GetOrCreateAsync(
+            athleteId,
             key,
             CacheTtl,
             token => FindAsync(athleteId, latitude, longitude, radiusMeters, cappedLimit, token),
