@@ -1,0 +1,8 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <ItemGroup>
+    <!-- NetTopologySuite is the only dependency the domain takes: a route is a
+         LineString, and re-inventing planar geometry to stay "pure" would be
+         worse, not cleaner. -->
+    <PackageReference Include="NetTopologySuite" />
+  </ItemGroup>
+</Project>
