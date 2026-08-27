@@ -159,6 +159,37 @@ public sealed record ParsedActivity(
     SourceFormat Format,
     string? DeviceName);
 
+/// <summary>
+/// Where uploaded device files live.
+///
+/// Content-addressed by checksum, so the same bytes are stored once and a
+/// re-upload costs nothing. The store owns path construction entirely: no caller
+/// builds a path, which is what lets the background worker reopen a file knowing
+/// only the activity it belongs to.
+/// </summary>
+public interface IActivityFileStore
+{
+    Task SaveAsync(
+        Guid athleteId,
+        string checksum,
+        string fileName,
+        ReadOnlyMemory<byte> content,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Returns null when the file is gone - a restored database against an empty volume.</summary>
+    Task<Stream?> OpenAsync(
+        Guid athleteId,
+        string checksum,
+        string fileName,
+        CancellationToken cancellationToken = default);
+
+    Task DeleteAsync(
+        Guid athleteId,
+        string checksum,
+        string fileName,
+        CancellationToken cancellationToken = default);
+}
+
 public interface IActivityFileParser
 {
     SourceFormat Format { get; }

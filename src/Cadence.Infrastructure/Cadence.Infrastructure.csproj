@@ -10,5 +10,7 @@
     <PackageReference Include="BCrypt.Net-Next" />
     <PackageReference Include="Anthropic" />
     <PackageReference Include="Microsoft.Extensions.Options" />
+    <!-- Token issuing lives in Infrastructure; the API only validates. -->
+    <PackageReference Include="System.IdentityModel.Tokens.Jwt" />
   </ItemGroup>
 </Project>

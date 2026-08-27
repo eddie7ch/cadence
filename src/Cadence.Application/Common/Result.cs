@@ -10,9 +10,15 @@ public enum ErrorKind
     Validation = 1,
     NotFound = 2,
     Conflict = 3,
-    Forbidden = 4,
-    Unprocessable = 5,
-    Unavailable = 6,
+
+    /// <summary>Credentials are missing or wrong - 401, distinct from 403.</summary>
+    Unauthorized = 4,
+
+    /// <summary>Authenticated, but not permitted.</summary>
+    Forbidden = 5,
+
+    Unprocessable = 6,
+    Unavailable = 7,
 }
 
 public sealed record Error(ErrorKind Kind, string Message)
@@ -22,6 +28,8 @@ public sealed record Error(ErrorKind Kind, string Message)
     public static Error NotFound(string message) => new(ErrorKind.NotFound, message);
 
     public static Error Conflict(string message) => new(ErrorKind.Conflict, message);
+
+    public static Error Unauthorized(string message) => new(ErrorKind.Unauthorized, message);
 
     public static Error Forbidden(string message) => new(ErrorKind.Forbidden, message);
 

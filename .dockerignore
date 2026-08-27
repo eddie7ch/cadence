@@ -1,0 +1,42 @@
+# The API build context is the repository root, so everything the .NET build
+# does not need is excluded here. Build outputs are the important ones: copying
+# a host bin/ into the image both bloats the context and lets a stale assembly
+# built on a different platform shadow the one the container just published.
+
+**/bin/
+**/obj/
+**/.vs/
+**/.vscode/
+**/.idea/
+**/*.user
+**/*.suo
+
+node_modules/
+web/node_modules/
+web/dist/
+web/.vite/
+
+.git/
+.github/
+.gitignore
+.gitattributes
+.dockerignore
+
+docs/
+samples/
+tools/
+tests/**/TestResults/
+artifacts/
+
+data/
+uploads/
+.env
+.env.*
+!.env.example
+
+LICENSE
+README.md
+**/*.md
+
+Dockerfile
+docker-compose*.yml

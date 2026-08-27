@@ -1,0 +1,115 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch makes the first run's answer irrelevant.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  backend:
+    name: backend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "10.0.x"
+
+      - name: Restore
+        run: dotnet restore Cadence.slnx
+
+      # -warnaserror is redundant with TreatWarningsAsErrors in
+      # Directory.Build.props and is passed anyway, so that removing the
+      # property from a project file cannot quietly weaken CI.
+      - name: Build
+        run: dotnet build Cadence.slnx --configuration Release --no-restore -warnaserror
+
+      - name: Test
+        run: >-
+          dotnet test Cadence.slnx
+          --configuration Release
+          --no-build
+          --logger "trx;LogFileName=results.trx"
+          --results-directory artifacts/test-results
+
+      - name: Verify the sample generator still compiles
+        run: dotnet build tools/GenerateSamples/GenerateSamples.csproj --configuration Release
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: artifacts/test-results
+          if-no-files-found: warn
+
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        run: npm ci
+
+      # Type checking is separate from the build on purpose: Vite transpiles
+      # without type checking, so a build that succeeds proves nothing about
+      # whether the types are sound.
+      - name: Type check
+        run: npx tsc --noEmit
+
+      - name: Build
+        run: npm run build
+
+  stack:
+    name: stack smoke test
+    runs-on: ubuntu-latest
+    needs: [backend]
+    steps:
+      - uses: actions/checkout@v4
+
+      # Only the API and its dependencies: this job exists to prove the
+      # container builds and that the service reaches readiness against a real
+      # PostGIS and a real Redis, which is exactly what the unit tests cannot
+      # tell us. The web image is covered by the frontend job.
+      - name: Start the API and its dependencies
+        run: docker compose up --build --detach postgres redis api
+
+      - name: Wait for readiness
+        run: |
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent --show-error http://localhost:8080/api/v1/health/ready > /dev/null; then
+              echo "ready after ${attempt} attempt(s)"
+              curl --silent http://localhost:8080/api/v1/health/ready
+              exit 0
+            fi
+            sleep 3
+          done
+          echo "::error::the API never became ready"
+          exit 1
+
+      - name: Container logs
+        if: failure()
+        run: docker compose logs --no-color --timestamps
+
+      - name: Tear down
+        if: always()
+        run: docker compose down --volumes --remove-orphans

@@ -1,0 +1,104 @@
+# One command brings the whole stack up:
+#
+#   docker compose up --build
+#
+# Every published port is overridable, because 5432, 6379 and 3000 are already
+# taken on most developer machines and a demo that refuses to start because of a
+# port clash is a demo nobody sees. Copy .env.example to .env to change them.
+
+name: cadence
+
+services:
+  postgres:
+    image: postgis/postgis:17-3.5
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-cadence}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-cadence}
+      POSTGRES_DB: ${POSTGRES_DB:-cadence}
+      # Postgres refuses to initialise into a non-empty directory, and the
+      # official image's data path is the mount root. Nesting one level down
+      # keeps lost+found on a bind mount from breaking first start.
+      PGDATA: /var/lib/postgresql/data/pgdata
+    ports:
+      - "${POSTGRES_PORT:-5434}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      # -U and -d are both required: pg_isready with no database answers for the
+      # postmaster, which is up several seconds before the init scripts that
+      # create the database and the PostGIS extension have finished.
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cadence} -d ${POSTGRES_DB:-cadence}"]
+      interval: 5s
+      timeout: 5s
+      retries: 24
+      start_period: 10s
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--save", "60", "1", "--loglevel", "warning"]
+    ports:
+      - "${REDIS_PORT:-6381}:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 24
+      start_period: 5s
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: src/Cadence.Api/Dockerfile
+    ports:
+      - "${API_PORT:-8080}:8080"
+    environment:
+      ASPNETCORE_ENVIRONMENT: ${ASPNETCORE_ENVIRONMENT:-Development}
+      # Service names, not localhost: inside the Compose network the database
+      # answers on 5432 whatever POSTGRES_PORT publishes it as on the host.
+      ConnectionStrings__Postgres: >-
+        Host=postgres;Port=5432;Database=${POSTGRES_DB:-cadence};Username=${POSTGRES_USER:-cadence};Password=${POSTGRES_PASSWORD:-cadence};Include Error Detail=true
+      ConnectionStrings__Redis: redis:6379
+      Jwt__Secret: ${JWT_SECRET:-cadence-local-development-signing-key-change-me}
+      Jwt__Issuer: ${JWT_ISSUER:-cadence}
+      Jwt__Audience: ${JWT_AUDIENCE:-cadence}
+      Jwt__LifetimeMinutes: ${JWT_LIFETIME_MINUTES:-720}
+      # Optional, and blank by default. The API must treat an empty string as
+      # "not configured" and disable the coaching endpoint rather than fail a
+      # request against Anthropic with no credentials.
+      Anthropic__ApiKey: ${ANTHROPIC_API_KEY:-}
+      Anthropic__Model: ${ANTHROPIC_MODEL:-claude-opus-5}
+      Storage__UploadDirectory: /data/uploads
+    volumes:
+      - api-uploads:/data/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        # Baked in at build time: Vite substitutes VITE_* at compile time, so
+        # this cannot be changed by an environment variable on the container.
+        # Override it whenever API_PORT is overridden. The /api/v1 prefix is
+        # part of the value - the client appends resource paths to it directly.
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8080/api/v1}
+    ports:
+      - "${WEB_PORT:-5173}:80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  redis-data:
+  api-uploads:
